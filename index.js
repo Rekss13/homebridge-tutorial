@@ -1,35 +1,23 @@
-// index.js
 "use strict";
-let Service, Characteristic;
 const http = require('http');
 
 module.exports = function (homebridge) {
-    /*
-        API.registerAccessory(PluginIdentifier,
-            AccessoryName, AccessoryPluginConstructor)
-    */
-    Service = homebridge.hap.Service;
-    Characteristic = homebridge.hap.Characteristic;
-    homebridge.registerAccessory("homebridge-tutorial",
-        "SensMan Volume", volume);
+
+    const Service = homebridge.hap.Service;
+    const Characteristic = homebridge.hap.Characteristic;
+    homebridge.registerAccessory("homebridge-tutorial", "URRI Volume", volume);
 
     function volume(log, config, api) {
         this.log = log;
         this.config = config;
         this.homebridge = api;
+        this.vol = 0;
 
-        if (this.config.defaultVolume)
-            this.defaultVolume = this.config.defaultVolume;
-        else
-            this.defaultVolume = 10;
+        this.defaultVolume = typeof this.config.defaultVolume == 'number' ? this.config.defaultVolume : 10;
+        this.refreshInterval = typeof this.config.refreshInterval == 'number' ? this.config.refreshInterval : 1000;
 
-        if (this.config.refreshInterval)
-            this.refreshInterval = this.config.refreshInterval;
-        else
-            this.refreshInterval = 1000;
-
-        this.log('Volume accessory is Created!');
-        this.log('defaultVolume is ' + this.defaultVolume);
+        this.log(`Volume accessory ${this.config.name} is Created!`);
+        this.log(`${this.config.name} defaultVolume is ${this.defaultVolume}`);
         this.bulb = new Service.Lightbulb(this.config.name);
         // Set up Event Handler for bulb on/off
         this.bulb.getCharacteristic(Characteristic.On)
@@ -56,33 +44,21 @@ module.exports = function (homebridge) {
             this.log('Homekit Asked Power State');
             this.log('getPower');
 
-            // read speaker volume info
-            let req = http.get('http://192.168.1.196:9032/getVolume', res => {
-                let recv_data = '';
-                res.on('data', chunk => {
-                    recv_data += chunk
-                });
-                res.on('end', () => {
-                    this.log(recv_data);
-                    // recv_data contains volume info.
-                    // let vol = JSON.parse(recv_data).volume; // vol = [0,100]
-                    let vol = parseInt(recv_data, 10);
-                    this.log('Read from Sonos; volume: ' + vol);
+            this._send(`/getVolume`, (error, result) => {
+                if (!error) {
+                    const vol = parseInt(result, 10);
+                    this.log('Read from URRI; volume: ' + vol);
                     this.vol = vol;
-
                     callback(null, this.vol > 0);
-                });
+                } else {
+                    callback(result);
+                }
             });
-            req.on('error', err => {
-                this.log("Error in getPower: " + err.message);
-                callback(err);
-            })
         },
         getVolume: function (callback) {
-            this.log('getVolume')
-
+            this.log('getVolume');
             // callback with volume read in getPower
-            callback(null, this.vol)
+            callback(null, this.vol);
         },
         setPower: function (on, callback) {
             let new_vol;
@@ -95,45 +71,33 @@ module.exports = function (homebridge) {
                 new_vol = on ? this.defaultVolume : 0;
             }
 
-            // let toSend = '{"volume": ' + new_vol + '}';
-            let options = {
-                host: 'localhost',
-                port: 5000,
-                path: `/setVolume/${new_vol}`,
-                method: 'POST',
-                // headers: {
-                //     'Content-Type': 'application/json',
-                //     'Content-Length': toSend.length
-                // }
-            }
-
-            let req = http.request(options, res => {
-                let recv_data = '';
-                res.on('data', chunk => { recv_data += chunk })
+            this._send(`/setVolume/${new_vol}`, (error, result) => {
+                if (!error) {
+                    this.log('Request sent to set volume to ' + new_vol);
+                    this.vol = new_vol;
+                    this.updateUI();
+                    callback(null);
+                } else {
+                    callback(result);
+                }
             });
-
-            req.on('error', err => {
-                this.log('Error in setPower:' + err.message);
-                callback(err);
-            });
-
-            // req.end(toSend)
-            req.end()
-            this.log('Request sent to set volume to ' + new_vol)
-            this.vol = new_vol;
-
-            this.updateUI();
-
-            callback(null);
         },
         setVolume: function (vol, callback) {
             if (vol == 100) { callback(null); return; }
             this.log('setVolume ' + vol);
 
-            this.vol = vol;
             this.triggeredby = 'slider';
 
-            callback(null);
+            this._send(`/setVolume/${vol}`, (error, result) => {
+                if (!error) {
+                    this.log('Request sent to set volume to ' + vol);
+                    this.vol = vol;
+                    this.updateUI();
+                    callback(null);
+                } else {
+                    callback(result);
+                }
+            });
         },
         updateUI: function () {
             setTimeout(() => {
@@ -152,6 +116,26 @@ module.exports = function (homebridge) {
             });
 
             this.timer = setTimeout(this.poll.bind(this), this.refreshInterval);
+        },
+        _send(path, callback) {
+            const req = http.request({
+                host: 'localhost', port: 9032,
+                path: path, method: 'POST'
+            }, res => {
+                res.setEncoding('utf8');
+                res.on('data', chunk => {
+                    this.log(`BODY: ${chunk}`);
+                    callback(false, chunk);
+                });
+                res.on('end', () => {});
+            });
+
+            req.on('error', (e) => {
+                this.log(`problem with request: ${e.message}`);
+                callback(true, err);
+            });
+
+            req.end();
         }
     }
 };
