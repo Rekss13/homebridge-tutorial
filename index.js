@@ -37,7 +37,7 @@ module.exports = function (homebridge) {
             if (!this.bulb) return [];
             this.log('Homekit asked to report service');
             const infoService = new Service.AccessoryInformation();
-            infoService.setCharacteristic(Characteristic.Manufacturer, 'SensMan')
+            infoService.setCharacteristic(Characteristic.Manufacturer, 'URRI');
             return [infoService, this.bulb];
         },
         getPower: function (callback) {
