@@ -102,7 +102,8 @@ Add accessories in config.json file, which is homebridge's configuration file. P
 "accessories": [
         {
             "name": "TV Volume",
-            "accessory": "URRI Volume"
+            "accessory": "URRI Volume",
+            "address": "192.168.1.206"
         },
         {
             "name": "Radio Volume",
@@ -112,6 +113,8 @@ Add accessories in config.json file, which is homebridge's configuration file. P
     ]
 ```
 Homebridge will call our constructor for each accessory. It also calls getServices to know what devices are included in my accessory. For example, despite of the accessory name, URRI Volume may contain a lightbulb and a fan.
+
+In the description of the accessory, you can specify its ip address, if this is not done, an attempt will be made to connect to localhost.
 
 We have to define getServices function like below. Currently, we do not return any service, which means that there will be no actual device showing in homekit.
 
@@ -257,6 +260,11 @@ According to my experiment, get brightness is always called after get power stat
 Soon after getPower is called, getVolume is called. Since this.vol is already updated, the function simply reports this.vol value.
 
 ```js
+function volume(log, config, api) {
+    // ... existing codes
+    this.address = typeof this.config.address == 'string' ? this.config.address : 'localhost';
+}
+
 getPower: function (callback) {
     this.log('Homekit Asked Power State');
     this.log('getPower');
@@ -279,7 +287,7 @@ getVolume: function (callback) {
 },
 _send(path, callback) {
     const req = http.request({
-        host: 'localhost', port: 9032,
+        host: this.address, port: 9032,
         path: path, method: 'POST'
     }, res => {
         res.setEncoding('utf8');
@@ -290,8 +298,8 @@ _send(path, callback) {
         res.on('end', () => {});
     });
 
-    req.on('error', (e) => {
-        this.log(`problem with request: ${e.message}`);
+    req.on('error', (err) => {
+        this.log(`problem with request: ${err.message}`);
         callback(true, err);
     });
 
@@ -367,15 +375,15 @@ function volume(log, config, api) {
 }
 
 poll: function() {
-        if(this.timer) clearTimeout(this.timer);
-        this.timer = null;
+    if(this.timer) clearTimeout(this.timer);
+    this.timer = null;
 
-        // volume update from Sonos
-        this.getPower( (err, poweron) => {  //this.vol updated.
-            // update UI
-            this.updateUI();
-        });
+    // volume update from URRI
+    this.getPower( (err, poweron) => {  //this.vol updated.
+        // update UI
+        this.updateUI();
+    });
 
-        this.timer = setTimeout(this.poll.bind(this), this.refreshInterval);
+    this.timer = setTimeout(this.poll.bind(this), this.refreshInterval);
     }
 ```

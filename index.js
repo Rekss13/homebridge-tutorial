@@ -14,6 +14,7 @@ module.exports = function (homebridge) {
         this.vol = 0;
 
         this.defaultVolume = typeof this.config.defaultVolume == 'number' ? this.config.defaultVolume : 10;
+        this.address = typeof this.config.address == 'string' ? this.config.address : 'localhost';
         this.refreshInterval = typeof this.config.refreshInterval == 'number' ? this.config.refreshInterval : 1000;
 
         this.log(`Volume accessory ${this.config.name} is Created!`);
@@ -109,7 +110,7 @@ module.exports = function (homebridge) {
             if (this.timer) clearTimeout(this.timer);
             this.timer = null;
 
-            // volume update from Sonos
+            // volume update from URRI
             this.getPower((err, poweron) => {  //this.vol updated.
                 // update UI
                 this.updateUI();
@@ -119,7 +120,7 @@ module.exports = function (homebridge) {
         },
         _send(path, callback) {
             const req = http.request({
-                host: 'localhost', port: 9032,
+                host: this.address, port: 9032,
                 path: path, method: 'POST'
             }, res => {
                 res.setEncoding('utf8');
@@ -130,8 +131,8 @@ module.exports = function (homebridge) {
                 res.on('end', () => {});
             });
 
-            req.on('error', (e) => {
-                this.log(`problem with request: ${e.message}`);
+            req.on('error', (err) => {
+                this.log(`problem with request: ${err.message}`);
                 callback(true, err);
             });
 
