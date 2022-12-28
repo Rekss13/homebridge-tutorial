@@ -44,7 +44,7 @@ package.json
 
 Now time to install my module so that homebridge can load. In the directory where package.json lives, run the following command. It will create a symbolic link in nodejs module path that points our module directory.
 ```
-sudo ln /home/[user_name]/homebridge-tutorial /var/lib/homebridge/node_modules/homebridge-tutorial
+sudo ln -s /home/[user_name]/homebridge-tutorial /var/lib/homebridge/node_modules/homebridge-tutorial
 ```
 
 Refresh your homebridge config web interface. Plugin should be found there.
