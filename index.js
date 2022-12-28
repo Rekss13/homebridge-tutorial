@@ -55,6 +55,8 @@ class UrriVolumePlugin {
                 this.log.info('Request sent to set volume to ' + new_vol);
                 this.vol = new_vol;
                 this.updateUI();
+            } else {
+                this.bulb.updateCharacteristic(this.Characteristic.On, new Error(result));
             }
         });
     }
@@ -72,6 +74,8 @@ class UrriVolumePlugin {
                     this.log.info('Request sent to set volume to ' + value);
                     this.vol = value;
                     this.updateUI();
+                } else {
+                    this.bulb.updateCharacteristic(this.Characteristic.Brightness, new Error(result));
                 }
             });
         }
@@ -100,6 +104,9 @@ class UrriVolumePlugin {
                 this.log.debug('Read from URRI; volume: ' + volume);
                 this.vol = volume;
                 this.updateUI();
+            } else {
+                this.bulb.updateCharacteristic(this.Characteristic.On, new Error(result));
+                this.bulb.updateCharacteristic(this.Characteristic.Brightness, new Error(result));
             }
         });
     }
