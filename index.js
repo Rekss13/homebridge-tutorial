@@ -1,142 +1,127 @@
 "use strict";
 const http = require('http');
 
-module.exports = function (homebridge) {
+module.exports = (api) => {
+    api.registerAccessory("URRI Volume", UrriVolumePlugin);
+}
 
-    const Service = homebridge.hap.Service;
-    const Characteristic = homebridge.hap.Characteristic;
-    homebridge.registerAccessory("homebridge-tutorial", "URRI Volume", volume);
-
-    function volume(log, config, api) {
+class UrriVolumePlugin {
+    constructor(log, config, api) {
         this.log = log;
         this.config = config;
-        this.homebridge = api;
+        this.Service = api.hap.Service;
+        this.Characteristic = api.hap.Characteristic;
         this.vol = 0;
-
         this.defaultVolume = typeof this.config.defaultVolume == 'number' ? this.config.defaultVolume : 10;
         this.address = typeof this.config.address == 'string' ? this.config.address : 'localhost';
         this.refreshInterval = typeof this.config.refreshInterval == 'number' ? this.config.refreshInterval : 1000;
 
-        this.log(`Volume accessory ${this.config.name} is Created!`);
-        this.log(`${this.config.name} defaultVolume is ${this.defaultVolume}`);
-        this.bulb = new Service.Lightbulb(this.config.name);
+        this.log.info(`Volume accessory ${this.config.name} is Created!`);
+        this.log.info(`${this.config.name} defaultVolume is ${this.defaultVolume}`);
+
+        this.infoService = new this.Service.AccessoryInformation()
+            .setCharacteristic(this.Characteristic.Manufacturer, "URRI")
+            .setCharacteristic(this.Characteristic.Model, "URRI receiver Volume control");
+
+        this.bulb = new this.Service.Lightbulb(this.config.name);
         // Set up Event Handler for bulb on/off
-        this.bulb.getCharacteristic(Characteristic.On)
-            .on("get", this.getPower.bind(this))
-            .on("set", this.setPower.bind(this));
-        this.bulb.getCharacteristic(Characteristic.Brightness)
-            .on("get", this.getVolume.bind(this))
-            .on("set", this.setVolume.bind(this));
+        this.bulb.getCharacteristic(this.Characteristic.On)
+            .onGet(this.getOnHandler.bind(this))
+            .onSet(this.setOnHandler.bind(this));
+        this.bulb.getCharacteristic(this.Characteristic.Brightness)
+            .onGet(this.getBrightnessHandler.bind(this))
+            .onSet(this.setBrightnessHandler.bind(this));
 
         this.timer = setTimeout(this.poll.bind(this), this.refreshInterval);
 
-        this.log('all event handler was setup.')
-    };
+        this.log.info('all event handler was setup.');
+    }
 
-    volume.prototype = {
-        getServices: function () {
-            if (!this.bulb) return [];
-            this.log('Homekit asked to report service');
-            const infoService = new Service.AccessoryInformation();
-            infoService.setCharacteristic(Characteristic.Manufacturer, 'URRI');
-            return [infoService, this.bulb];
-        },
-        getPower: function (callback) {
-            this.log('Homekit Asked Power State');
-            this.log('getPower');
+    getServices() {
+        return [this.infoService, this.bulb];
+    }
 
-            this._send(`/getVolume`, (error, result) => {
-                if (!error) {
-                    const vol = parseInt(result, 10);
-                    this.log('Read from URRI; volume: ' + vol);
-                    this.vol = vol;
-                    callback(null, this.vol > 0);
-                } else {
-                    callback(result);
-                }
-            });
-        },
-        getVolume: function (callback) {
-            this.log('getVolume');
-            // callback with volume read in getPower
-            callback(null, this.vol);
-        },
-        setPower: function (on, callback) {
-            let new_vol;
-            if (this.triggeredby == 'slider') {
-                this.log('setPower triggered by slider')
-                new_vol = this.vol;
-                delete this.triggeredby;
-            } else {
-                this.log('setPower ' + on)
-                new_vol = on ? this.defaultVolume : 0;
-            }
+    async getOnHandler() {
+        this.log.debug('Homekit Asked On State');
+        this._getData();
+        return this.vol > 0;
+    }
 
-            this._send(`/setVolume/${new_vol}`, (error, result) => {
-                if (!error) {
-                    this.log('Request sent to set volume to ' + new_vol);
-                    this.vol = new_vol;
-                    this.updateUI();
-                    callback(null);
-                } else {
-                    callback(result);
-                }
-            });
-        },
-        setVolume: function (vol, callback) {
-            if (vol == 100) { callback(null); return; }
-            this.log('setVolume ' + vol);
-
-            this.triggeredby = 'slider';
-
-            this._send(`/setVolume/${vol}`, (error, result) => {
-                if (!error) {
-                    this.log('Request sent to set volume to ' + vol);
-                    this.vol = vol;
-                    this.updateUI();
-                    callback(null);
-                } else {
-                    callback(result);
-                }
-            });
-        },
-        updateUI: function () {
-            setTimeout(() => {
-                this.bulb.getCharacteristic(Characteristic.Brightness).updateValue(this.vol);
-                this.bulb.getCharacteristic(Characteristic.On).updateValue(this.vol > 0);
-            }, 100);
-        },
-        poll: function () {
-            if (this.timer) clearTimeout(this.timer);
-            this.timer = null;
-
-            // volume update from URRI
-            this.getPower((err, poweron) => {  //this.vol updated.
-                // update UI
+    async setOnHandler(value) {
+        this.log.info('OnHandler state to:', value);
+        let new_vol = value ? this.defaultVolume : 0;
+        this._send(`/setVolume/${new_vol}`, (error, result) => {
+            if (!error) {
+                this.log.info('Request sent to set volume to ' + new_vol);
+                this.vol = new_vol;
                 this.updateUI();
-            });
+            }
+        });
+    }
 
-            this.timer = setTimeout(this.poll.bind(this), this.refreshInterval);
-        },
-        _send(path, callback) {
-            const req = http.request({
-                host: this.address, port: 9032,
-                path: path, method: 'POST'
-            }, res => {
-                res.setEncoding('utf8');
-                res.on('data', chunk => {
-                    this.log(`BODY: ${chunk}`);
-                    callback(false, chunk);
-                });
-                res.on('end', () => {});
-            });
+    async getBrightnessHandler() {
+        this.log.debug('Homekit Asked Brightness State');
+        return this.vol;
+    }
 
-            req.on('error', (err) => {
-                this.log(`problem with request: ${err.message}`);
-                callback(true, err);
+    async setBrightnessHandler(value) {
+        if (value != 100) {
+            this.log.info('BrightnessHandler state to:', value);
+            this._send(`/setVolume/${value}`, (error, result) => {
+                if (!error) {
+                    this.log.info('Request sent to set volume to ' + value);
+                    this.vol = value;
+                    this.updateUI();
+                }
             });
-
-            req.end();
         }
     }
-};
+
+    updateUI() {
+        setTimeout(() => {
+            this.bulb.updateCharacteristic(this.Characteristic.On, this.vol > 0);
+            this.bulb.updateCharacteristic(this.Characteristic.Brightness, this.vol);
+        }, 100);
+    }
+
+    poll() {
+        if (this.timer) clearTimeout(this.timer);
+        this.timer = null;
+
+        // volume update from URRI
+        this._getData();
+        this.timer = setTimeout(this.poll.bind(this), this.refreshInterval);
+    }
+
+    async _getData() {
+        this._send(`/getVolume`, (error, result) => {
+            if (!error) {
+                const volume = parseInt(result, 10);
+                this.log.debug('Read from URRI; volume: ' + volume);
+                this.vol = volume;
+                this.updateUI();
+            }
+        });
+    }
+
+    _send(path, callback) {
+        const req = http.request({
+            host: this.address, port: 9032,
+            path: path, method: 'POST'
+        }, res => {
+            res.setEncoding('utf8');
+            res.on('data', chunk => {
+                this.log.debug(`BODY: ${chunk}`);
+                callback(false, chunk);
+            });
+            res.on('end', () => { });
+        });
+
+        req.on('error', (err) => {
+            this.log(`problem with request: ${err.message}`);
+            callback(true, err);
+        });
+
+        req.end();
+    }
+}
