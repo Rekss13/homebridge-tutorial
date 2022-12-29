@@ -269,8 +269,14 @@ constructor(log, config, api) {
 
 async getOnHandler() {
     this.log.debug('Homekit Asked On State');
-    this._getData();
-    return this.vol > 0;
+    try {
+        this.vol = await this._getData();
+        this.bulb.updateCharacteristic(this.Characteristic.Brightness, this.vol);
+    } catch (error) {
+        this.bulb.updateCharacteristic(this.Characteristic.On, new Error(error));
+    } finally {
+        return this.vol > 0;
+    }
 }
 async getBrightnessHandler() {
     this.log.debug('Homekit Asked Brightness State');
@@ -280,17 +286,17 @@ updateUI() {
     this.bulb.updateCharacteristic(this.Characteristic.On, this.vol > 0);
     this.bulb.updateCharacteristic(this.Characteristic.Brightness, this.vol);
 }
-async _getData() {
-    this._send(`/getVolume`, (error, result) => {
-        if (!error) {
-            const volume = parseInt(result, 10);
-            this.log.debug('Read from URRI; volume: ' + volume);
-            this.vol = volume;
-            this.updateUI();
-        } else {
-            this.bulb.updateCharacteristic(this.Characteristic.On, new Error(result));
-            this.bulb.updateCharacteristic(this.Characteristic.Brightness, new Error(result));
-        }
+_getData() {
+    return new Promise((resolve, reject) => {
+        this._send(`/getVolume`, (error, result) => {
+            if (!error) {
+                const volume = parseInt(result, 10);
+                this.log.debug('Read from URRI; volume: ' + volume);
+                resolve(volume);
+            } else {
+                reject(result);
+            }
+        });
     });
 }
 _send(path, callback) {
@@ -375,7 +381,17 @@ poll() {
     this.timer = null;
 
     // volume update from URRI
-    this._getData();
+    this._send(`/getVolume`, (error, result) => {
+        if (!error) {
+            const volume = parseInt(result, 10);
+            this.log.debug('Read from URRI; volume: ' + volume);
+            this.vol = volume;
+            this.updateUI();
+        } else {
+            this.bulb.updateCharacteristic(this.Characteristic.On, new Error(result));
+            this.bulb.updateCharacteristic(this.Characteristic.Brightness, new Error(result));
+        }
+    });
     this.timer = setTimeout(this.poll.bind(this), this.refreshInterval);
 }
 ```
